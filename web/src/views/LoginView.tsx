@@ -1,6 +1,6 @@
 import { ArrowLeft, Loader2, MailCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { supabase } from '../lib/supabase';
+import { getRememberMe, setRememberMe, supabase } from '../lib/supabase';
 
 export default function LoginView() {
   const [email, setEmail] = useState('');
@@ -9,10 +9,12 @@ export default function LoginView() {
   const [password, setPassword] = useState('');
   const [signup, setSignup] = useState(false);
   const [sentText, setSentText] = useState('');
+  const [remember, setRemember] = useState(getRememberMe);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!supabase) return;
+    setRememberMe(remember);
     setState('sending');
     if (signup) {
       const { data, error } = await supabase.auth.signUp({
@@ -123,6 +125,15 @@ export default function LoginView() {
               {signup ? 'יצירת חשבון' : password ? 'כניסה' : 'קבלת קישור התחברות'}
               <ArrowLeft className="size-5" />
             </button>
+            <label className="flex cursor-pointer items-center gap-2.5 px-1 py-1 text-sm text-white/85">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="size-5 rounded accent-white"
+              />
+              שמור אותי מחובר
+            </label>
             <button
               type="button"
               onClick={() => {

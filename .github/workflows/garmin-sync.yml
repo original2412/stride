@@ -32,4 +32,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python sync_all.py --min-interval-hours 3
+        run: python sync_all.py --min-interval-hours 3 --tokens-only

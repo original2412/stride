@@ -82,6 +82,12 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--only-requested", action="store_true", help="Only users who requested a sync")
     parser.add_argument("--min-interval-hours", type=float, default=1.5)
+    parser.add_argument(
+        "--tokens-only",
+        action="store_true",
+        help="Cloud mode: never log in with a password (Garmin blocks datacenter IPs); "
+        "only resume users who already have session tokens from a first login at home.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -92,6 +98,12 @@ def main() -> int:
 
     for t in targets:
         if not t.get("password") and not t.get("tokens"):
+            skipped += 1
+            continue
+        if args.tokens_only and not t.get("tokens"):
+            if t.get("status") != "pending":
+                _set_link(sb, t["user_id"], status="pending",
+                          last_error="ממתין להתחברות ראשונה מהמחשב (Garmin חוסם התחברות ראשונה משרתי ענן)")
             skipped += 1
             continue
         requested = _parse_ts(t.get("sync_requested_at"))
@@ -110,7 +122,8 @@ def main() -> int:
             failed += 1
 
     log.info("Done: %d ok, %d failed, %d skipped", ok, failed, skipped)
-    return 1 if failed and not ok else 0
+    # Per-user failures are reported in the app; don't fail the scheduled job for them.
+    return 0
 
 
 if __name__ == "__main__":
