@@ -157,7 +157,7 @@ export default function SettingsView() {
 
       <GarminSection />
 
-      <Group title="Google Gemini">
+      <Group title="Google Gemini (אופציונלי)">
         <div className="space-y-3 p-4">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-sm font-semibold">
@@ -199,7 +199,7 @@ export default function SettingsView() {
             {savingKey ? 'שומר…' : key ? 'שמירת מפתח' : keySet ? 'הסרת המפתח' : 'שמירת מפתח'}
           </button>
           <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
-            המפתח נשמר בשרת בלבד ואינו נקרא חזרה לדפדפן. מקבלים מפתח ב-Google AI Studio.
+            התוכנית נבנית לפי כללי המחקר גם בלי מפתח. Gemini רק מנסח את הערת המאמן בשפה טבעית. המפתח נשמר בשרת בלבד ואינו נקרא חזרה לדפדפן.
           </p>
         </div>
       </Group>

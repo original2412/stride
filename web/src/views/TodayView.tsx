@@ -71,7 +71,7 @@ export default function TodayView() {
     try {
       await recalibratePlan();
       await data.reload();
-      toast('Gemini עדכן את התוכנית לפי הנתונים האחרונים');
+      toast('התוכנית עודכנה לפי הנתונים האחרונים');
     } catch (e) {
       toast((e as Error).message, 'error');
     } finally {
@@ -307,7 +307,7 @@ function EmptyHero() {
       </div>
       <h2 className="text-lg font-bold">אין עדיין אימון להיום</h2>
       <p className="max-w-[28ch] text-sm text-slate-500 dark:text-slate-400">
-        סנכרנו ריצות מ-Garmin ולחצו על “כיול עם Gemini” כדי לקבל תוכנית מותאמת אישית.
+        סנכרנו ריצות מ-Garmin ולחצו על “עדכון התוכנית” כדי לקבל תוכנית מבוססת מחקר.
       </p>
     </section>
   );
@@ -332,7 +332,7 @@ function RecalibrateButton({
       >
         <span className="flex items-center justify-center gap-2.5 rounded-[14px] bg-white px-4 py-4 text-[15px] font-bold text-brand-600 transition group-hover:bg-brand-50 dark:bg-ink-800 dark:text-brand-300 dark:group-hover:bg-ink-700">
           {loading ? <Loader2 className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
-          {loading ? 'Gemini מנתח את הריצות שלך…' : 'כיול מחדש של התוכנית עם Gemini'}
+          {loading ? 'מחשב את התוכנית לפי הנתונים שלך…' : 'עדכון התוכנית לפי הנתונים'}
         </span>
       </button>
       {assessment && !loading && (

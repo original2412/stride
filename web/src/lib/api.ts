@@ -1,6 +1,8 @@
 // Data access layer. Each function talks to Supabase, or falls back to the
 // in-memory demo store when Supabase isn't configured.
 import { addDays, toISODate } from './format';
+import { assess, buildPlan } from './planner';
+import { estimateVdot, marathonShape, prescribeWeek, trainingPaces, vdotFromPerformance } from './science';
 import { mockStore } from './mockData';
 import { supabase } from './supabase';
 import type { Activity, CoachAssessment, CoachingPlan, PlanStatus, Profile, Race } from './types';
@@ -127,24 +129,11 @@ export interface RecalibrateResult {
 export async function recalibratePlan(): Promise<RecalibrateResult> {
   const today = toISODate(new Date());
   if (!supabase) {
-    await delay(2200);
-    // Demo: pretend Gemini saw good recovery and eased today's adjustment.
-    const t = mockStore.plan.find((p) => p.plan_date === today);
-    if (t && t.workout_type !== 'rest' && t.adjustment_sec > 0) {
-      t.target_pace_fast_sec_km! -= 5;
-      t.target_pace_slow_sec_km! -= 5;
-      t.adjustment_sec -= 5;
-      t.adaptation_note = `הקצב הואט ב-${t.adjustment_sec} שנ׳ — ההתאוששות השתפרה מאתמול`;
-    }
-    mockStore.assessment = {
-      ...mockStore.assessment,
-      assessed_at: new Date().toISOString(),
-      readiness_score: Math.min(100, mockStore.assessment.readiness_score + 4),
-    };
-    return { assessment: clone(mockStore.assessment), workouts: clone(mockStore.plan) };
+    await delay(900);
+    return recalibrateDemo(today);
   }
   const { data, error } = await supabase.functions.invoke<RecalibrateResult>('recalibrate-plan', {
-    body: { today, days: 28 },
+    body: { today },
   });
   if (error) {
     const ctx = (error as { context?: Response }).context;
@@ -152,6 +141,65 @@ export async function recalibratePlan(): Promise<RecalibrateResult> {
     throw new Error(msg ?? error.message);
   }
   return data!;
+}
+
+/** Demo mode runs the exact same research engine locally on mock data. */
+function recalibrateDemo(today: string): RecalibrateResult {
+  const { activities, races, profile } = mockStore;
+  const now = Date.parse(`${today}T23:59:59`);
+  const age = (a: Activity) => (now - Date.parse(a.start_time)) / 86_400_000;
+  const last28 = activities.filter((a) => age(a) >= 0 && age(a) <= 28);
+  const last7 = last28.filter((a) => age(a) <= 7);
+  const load = (xs: Activity[]) => xs.reduce((s, a) => s + (a.training_load ?? a.duration_s / 60), 0);
+  const km = (xs: Activity[]) => xs.reduce((s, a) => s + a.distance_m / 1000, 0);
+  const acwr = last28.length >= 4 ? Math.round((load(last7) / (load(last28) / 4)) * 100) / 100 : null;
+  const avgWeekly = Math.round((km(last28) / 4) * 10) / 10;
+
+  const prevVdot = mockStore.assessment.vdot ?? null;
+  const goal = races.find((r) => r.priority === 'A' && r.target_time_s);
+  const fallback = goal ? vdotFromPerformance(goal.distance_km * 1000, goal.target_time_s!) - 2 : 40;
+  const vdot = estimateVdot(activities, profile.hr_max, profile.hr_rest, today, prevVdot, fallback);
+  const paces = trainingPaces(vdot.vdot);
+  const week = prescribeWeek({ today, races, avgWeeklyKm28: avgWeekly, km7: km(last7), acwr });
+  const days = buildPlan({
+    today,
+    vdot: vdot.vdot,
+    previousVdot: prevVdot,
+    paces,
+    week,
+    races,
+    runsPerWeek: Math.min(6, Math.max(4, Math.round(last28.length / 4))),
+    acwr,
+    previousPlan: mockStore.plan,
+  });
+  const a = assess({ vdot: vdot.vdot, previousVdot: prevVdot, acwr, km7: km(last7), avgWeeklyKm28: avgWeekly, daysSinceLastRun: 1, week });
+
+  const byDate = new Map(mockStore.plan.map((p) => [p.plan_date, p]));
+  for (const d of days) {
+    const existing = byDate.get(d.date);
+    if (existing && existing.status !== 'planned') continue;
+    const row: CoachingPlan = { ...d, id: existing?.id ?? `demo-${d.date}`, plan_date: d.date, status: 'planned' };
+    if (existing) Object.assign(existing, row);
+    else mockStore.plan.push(row);
+  }
+  mockStore.plan.sort((x, y) => x.plan_date.localeCompare(y.plan_date));
+  const longest = Math.max(0, ...last28.map((x) => x.distance_m / 1000));
+  const marathon = races.find((r) => r.distance_km > 40);
+  mockStore.assessment = {
+    id: `demo-assess-${Date.now()}`,
+    assessed_at: new Date().toISOString(),
+    fatigue_level: a.fatigue_level,
+    readiness_score: a.readiness_score,
+    marathon_shape_pct: marathonShape(vdot.vdot, marathon?.target_time_s ?? null, longest, avgWeekly),
+    acwr,
+    summary: a.summary,
+    vdot: vdot.vdot,
+    vdot_source: vdot.source,
+    training_paces: paces,
+    phase: week.phase,
+    weekly_km_target: week.weeklyKmTarget,
+  };
+  return { assessment: clone(mockStore.assessment), workouts: clone(mockStore.plan) };
 }
 
 // ---------------- Assessment / races ----------------
