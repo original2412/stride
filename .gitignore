@@ -1,0 +1,18 @@
+# dependencies / build output
+node_modules
+dist
+__pycache__
+.venv
+
+# secrets & local env (never commit)
+.env
+.env.local
+.env.*.local
+garmin-sync/.env
+
+# local tooling
+.claude
+supabase/.temp
+supabase/.branches
+*.log
+*.tsbuildinfo

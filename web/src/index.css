@@ -1,0 +1,96 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Rubik', ui-sans-serif, system-ui, sans-serif;
+
+  /* Runkeeper-inspired electric blue */
+  --color-brand-50: #eaf5ff;
+  --color-brand-100: #d0e9ff;
+  --color-brand-200: #a6d4ff;
+  --color-brand-300: #6cb8ff;
+  --color-brand-400: #3399ff;
+  --color-brand-500: #0a84ff;
+  --color-brand-600: #006ae0;
+  --color-brand-700: #0054b4;
+  --color-brand-800: #003f88;
+  --color-brand-900: #002b5e;
+
+  /* Energetic accent for streaks/highlights */
+  --color-ember-400: #ff9a3d;
+  --color-ember-500: #ff7a1a;
+  --color-ember-600: #e65c00;
+
+  --color-ink-950: #070c16;
+  --color-ink-900: #0b1220;
+  --color-ink-800: #121b2d;
+  --color-ink-700: #1b2740;
+  --color-ink-600: #2a3856;
+
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-pop: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-rise: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes pop {
+    0% { transform: scale(0.9); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes rise {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    background: var(--color-slate-100);
+  }
+  html.dark {
+    background: var(--color-ink-950);
+    color-scheme: dark;
+  }
+  body {
+    @apply min-h-dvh bg-slate-100 font-sans text-slate-900 antialiased dark:bg-ink-950 dark:text-slate-100;
+    overscroll-behavior-y: none;
+  }
+  button {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 2px;
+  }
+}
+
+@utility num {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+@utility card {
+  @apply rounded-3xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-12px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5 dark:bg-ink-800 dark:shadow-none dark:ring-white/5;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

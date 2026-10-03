@@ -1,0 +1,12 @@
+{
+  "name": "stride-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "db:push": "supabase db push",
+    "fn:deploy": "supabase functions deploy recalibrate-plan"
+  },
+  "devDependencies": {
+    "supabase": "^2.119.0"
+  }
+}
