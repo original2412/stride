@@ -37,6 +37,65 @@ export async function fetchActivities(days = 70): Promise<Activity[]> {
   return data as Activity[];
 }
 
+// ---------------- Strava (official OAuth; Garmin auto-uploads to Strava) ----------------
+export interface StravaLink {
+  athlete_id: number | null;
+  athlete_name: string | null;
+  status: 'pending' | 'ok' | 'error' | 'revoked';
+  last_error: string | null;
+  last_sync_at: string | null;
+}
+
+async function invokeStrava<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase!.functions.invoke<T>('strava', { body });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    const msg = ctx ? (await ctx.json().catch(() => null))?.error : null;
+    throw new Error(msg ?? error.message);
+  }
+  return data!;
+}
+
+export async function fetchStravaLink(): Promise<StravaLink | null> {
+  if (!supabase) {
+    return { athlete_id: 1, athlete_name: 'Demo Runner', status: 'ok', last_error: null, last_sync_at: mockStore.profile.garmin_last_sync_at };
+  }
+  const { data, error } = await supabase
+    .from('strava_links')
+    .select('athlete_id, athlete_name, status, last_error, last_sync_at')
+    .maybeSingle();
+  if (error) throw error;
+  // A row without an athlete is just an unfinished authorization.
+  return data && data.athlete_id ? (data as StravaLink) : null;
+}
+
+const stravaRedirect = () => window.location.origin + import.meta.env.BASE_URL;
+
+/** Sends the browser to Strava's consent screen. */
+export async function connectStrava(): Promise<void> {
+  if (!supabase) throw new Error('במצב הדגמה אין חיבור אמיתי ל-Strava');
+  const { url } = await invokeStrava<{ url: string }>({ action: 'authorize', redirect_uri: stravaRedirect() });
+  window.location.href = url;
+}
+
+/** Called after Strava redirects back with ?code&state&scope. */
+export async function completeStravaAuth(code: string, state: string, scope: string) {
+  return invokeStrava<{ ok: boolean; athlete: string | null; upserted: number }>({ action: 'exchange', code, state, scope });
+}
+
+export async function syncStrava(): Promise<{ upserted: number }> {
+  if (!supabase) {
+    await delay(1200);
+    return { upserted: 3 };
+  }
+  return invokeStrava<{ upserted: number }>({ action: 'sync' });
+}
+
+export async function disconnectStrava(): Promise<void> {
+  if (!supabase) return;
+  await invokeStrava({ action: 'disconnect' });
+}
+
 // ---------------- Garmin (cloud sync via GitHub Actions worker) ----------------
 export interface GarminLink {
   garmin_email: string;

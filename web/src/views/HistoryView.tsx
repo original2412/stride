@@ -4,7 +4,7 @@ import { PageHeader } from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { cx, ErrorCard, Skeleton } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
-import { fetchActivities, isDemo, syncGarmin } from '../lib/api';
+import { fetchActivities, fetchStravaLink, isDemo, syncGarmin, syncStrava } from '../lib/api';
 import { addDays, fmt, formatDuration, formatKm, formatPace, toISODate } from '../lib/format';
 import { weekStart } from '../lib/stats';
 import type { Activity } from '../lib/types';
@@ -17,9 +17,17 @@ export default function HistoryView() {
   async function handleSync() {
     setSyncing(true);
     try {
-      await syncGarmin();
-      await acts.reload();
-      toast(isDemo ? 'סונכרנו 3 ריצות מ-Garmin' : 'הבקשה נשלחה — הריצות יופיעו תוך כחצי שעה');
+      // Prefer the official Strava link (immediate); fall back to the queued Garmin worker.
+      const strava = isDemo ? null : await fetchStravaLink();
+      if (strava) {
+        const r = await syncStrava();
+        await acts.reload();
+        toast(`סונכרנו ${r.upserted} ריצות מ-Strava`);
+      } else {
+        await syncGarmin();
+        await acts.reload();
+        toast(isDemo ? 'סונכרנו 3 ריצות' : 'הבקשה נשלחה — הריצות יופיעו תוך כחצי שעה');
+      }
     } catch (e) {
       toast((e as Error).message, 'error');
     } finally {
@@ -32,7 +40,7 @@ export default function HistoryView() {
 
   return (
     <div>
-      <PageHeader eyebrow="Garmin Connect" title="היסטוריית ריצות" />
+      <PageHeader eyebrow="Strava · Garmin" title="היסטוריית ריצות" />
 
       <button
         onClick={handleSync}
@@ -40,7 +48,7 @@ export default function HistoryView() {
         className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 py-3.5 text-[15px] font-bold text-white shadow-lg shadow-brand-500/30 transition hover:bg-brand-600 active:scale-[0.99] disabled:opacity-80"
       >
         <RefreshCw className={cx('size-5', syncing && 'animate-spin')} />
-        {syncing ? 'מסנכרן עם Garmin…' : 'סנכרון עם Garmin'}
+        {syncing ? 'מסנכרן…' : 'סנכרון ריצות'}
       </button>
 
       {/* 30-day summary */}

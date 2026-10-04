@@ -23,7 +23,12 @@ import { cx, Skeleton } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
 import { useTheme, type ThemePref } from '../hooks/useTheme';
 import {
+  connectStrava,
+  disconnectStrava,
   fetchGarminLink,
+  fetchStravaLink,
+  syncStrava,
+  type StravaLink,
   fetchProfile,
   hasGeminiKey,
   isDemo,
@@ -154,6 +159,8 @@ export default function SettingsView() {
           </div>
         </div>
       </Group>
+
+      <StravaSection />
 
       <GarminSection />
 
@@ -320,7 +327,7 @@ function GarminSection() {
     'w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm outline-none ring-brand-500 focus:ring-2 dark:bg-white/5';
 
   return (
-    <Group title="Garmin Connect">
+    <Group title="Garmin Connect ישיר (לא מומלץ כרגע — Garmin חוסמים)">
       {l && !editing ? (
         <>
           <Row icon={<Watch className="size-4" />} iconBg="bg-slate-800 dark:bg-slate-600" label="חשבון">
@@ -421,6 +428,105 @@ function GarminSection() {
             הסיסמה נשמרת מוצפנת (Supabase Vault), לא נקראת חזרה לדפדפן, ומשמשת רק את שירות הסנכרון. אפשר לנתק ולמחוק בכל רגע.
           </p>
         </form>
+      )}
+    </Group>
+  );
+}
+
+const STRAVA_STATUS: Record<StravaLink['status'], { label: string; cls: string }> = {
+  ok: { label: 'מחובר', cls: 'text-emerald-600 dark:text-emerald-400' },
+  pending: { label: 'ממתין לאישור', cls: 'text-amber-600 dark:text-amber-400' },
+  error: { label: 'שגיאה בסנכרון', cls: 'text-rose-600 dark:text-rose-400' },
+  revoked: { label: 'הגישה בוטלה', cls: 'text-rose-600 dark:text-rose-400' },
+};
+
+function StravaSection() {
+  const toast = useToast();
+  const link = useAsync(fetchStravaLink);
+  const [busy, setBusy] = useState<'connect' | 'sync' | 'disconnect' | null>(null);
+
+  // Refresh after the OAuth callback finishes linking.
+  useEffect(() => {
+    const on = () => link.reload();
+    window.addEventListener('stride:strava-linked', on);
+    return () => window.removeEventListener('stride:strava-linked', on);
+  }, [link]);
+
+  async function run(kind: 'connect' | 'sync' | 'disconnect', fn: () => Promise<unknown>, okMsg?: (r: unknown) => string) {
+    setBusy(kind);
+    try {
+      const r = await fn();
+      if (okMsg) toast(okMsg(r));
+      await link.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (link.loading && !link.data) return <Skeleton className="mb-6 h-36" />;
+  const l = link.data ?? null;
+  const lastSync = l?.last_sync_at ? new Date(l.last_sync_at) : null;
+  const st = l ? STRAVA_STATUS[l.status] : null;
+
+  return (
+    <Group title="Strava (מומלץ)">
+      {l ? (
+        <>
+          <Row icon={<Watch className="size-4" />} iconBg="bg-[#fc4c02]" label="חשבון">
+            <span className="max-w-[55%] truncate text-sm text-slate-500 dark:text-slate-400">{l.athlete_name ?? '—'}</span>
+          </Row>
+          <Row label="סטטוס">
+            {st && <span className={cx('flex items-center gap-1 text-sm font-semibold', st.cls)}>{st.label}</span>}
+          </Row>
+          <Row label="סנכרון אחרון">
+            <span className="text-sm text-slate-500 dark:text-slate-400">
+              {lastSync ? `${fmt.dateShort(lastSync)} · ${fmt.time(lastSync)}` : '—'}
+            </span>
+          </Row>
+          {l.last_error && l.status !== 'ok' && (
+            <p className="mx-4 mb-1 rounded-xl bg-rose-500/10 p-3 text-[12px] text-rose-700 dark:text-rose-300">{l.last_error}</p>
+          )}
+          <div className="flex gap-2 p-4">
+            <button
+              onClick={() => run('sync', syncStrava, (r) => `סונכרנו ${(r as { upserted: number }).upserted} ריצות`)}
+              disabled={busy !== null}
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#fc4c02] py-3 text-sm font-bold text-white transition active:scale-[0.99] disabled:opacity-60"
+            >
+              <RefreshCw className={cx('size-4', busy === 'sync' && 'animate-spin')} />
+              {busy === 'sync' ? 'מסנכרן…' : 'סנכרן עכשיו'}
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('לנתק את Strava? הריצות שכבר נשמרו יישארו.')) run('disconnect', disconnectStrava, () => 'Strava נותק');
+              }}
+              disabled={busy !== null}
+              aria-label="ניתוק Strava"
+              className="grid w-12 place-items-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400"
+            >
+              <Unlink className="size-4" />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3 p-4">
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            חיבור רשמי ובטוח. ודאו שבאפליקציית Garmin Connect מופעל שיתוף אוטומטי ל-Strava — ומשם כל ריצה תגיע לכאן.
+          </p>
+          <button
+            onClick={() => run('connect', connectStrava)}
+            disabled={busy !== null}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#fc4c02] py-3.5 text-sm font-bold text-white shadow-lg shadow-orange-600/25 transition active:scale-[0.99] disabled:opacity-60"
+          >
+            {busy === 'connect' && <Loader2 className="size-4 animate-spin" />}
+            התחברות עם Strava
+          </button>
+          <p className="flex gap-2 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+            אין צורך בסיסמה — Strava נותנים הרשאת קריאה בלבד לפעילויות, ואפשר לבטל אותה בכל רגע.
+          </p>
+        </div>
       )}
     </Group>
   );

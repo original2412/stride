@@ -16,3 +16,5 @@ supabase/.temp
 supabase/.branches
 *.log
 *.tsbuildinfo
+*.mp4
+garmin-sync/first-sync.log

@@ -1,8 +1,9 @@
 import type { Session } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TABS, type TabId } from './components/BottomNav';
 import Layout from './components/Layout';
-import { ToastProvider } from './components/Toast';
+import { ToastProvider, useToast } from './components/Toast';
+import { completeStravaAuth } from './lib/api';
 import { supabase } from './lib/supabase';
 import GoalsView from './views/GoalsView';
 import HistoryView from './views/HistoryView';
@@ -29,6 +30,33 @@ function useSession() {
     return () => data.subscription.unsubscribe();
   }, []);
   return { session, loading };
+}
+
+/** Finishes the Strava OAuth round-trip (Strava redirects back with ?code&state&scope). */
+function StravaCallback() {
+  const toast = useToast();
+  const done = useRef(false);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const state = q.get('state');
+    if (done.current || !state || !(q.has('code') || q.has('error'))) return;
+    done.current = true;
+    // Drop the OAuth params from the address bar and land on Settings.
+    window.history.replaceState(null, '', `${window.location.pathname}#settings`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    if (q.get('error')) {
+      toast('החיבור ל-Strava בוטל', 'error');
+      return;
+    }
+    toast('מחבר את Strava ומושך ריצות…');
+    completeStravaAuth(q.get('code')!, state, q.get('scope') ?? '')
+      .then((r) => {
+        toast(`Strava חובר! נמשכו ${r.upserted} ריצות 🎉`);
+        window.dispatchEvent(new Event('stride:strava-linked'));
+      })
+      .catch((e: Error) => toast(e.message, 'error'));
+  }, [toast]);
+  return null;
 }
 
 export default function App() {
@@ -58,6 +86,7 @@ export default function App() {
         <LoginView />
       ) : (
         <Layout tab={tab} onTabChange={(t) => (window.location.hash = t)}>
+          {supabase && <StravaCallback />}
           {tab === 'today' && <TodayView />}
           {tab === 'history' && <HistoryView />}
           {tab === 'plan' && <PlanView />}
