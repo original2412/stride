@@ -23,12 +23,12 @@ import { cx, Skeleton } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
 import { useTheme, type ThemePref } from '../hooks/useTheme';
 import {
-  connectStrava,
-  disconnectStrava,
   fetchGarminLink,
-  fetchStravaLink,
-  syncStrava,
-  type StravaLink,
+  fetchIcuLink,
+  removeIcuCredentials,
+  saveIcuCredentials,
+  syncIcu,
+  type IcuLink,
   fetchProfile,
   hasGeminiKey,
   isDemo,
@@ -160,7 +160,7 @@ export default function SettingsView() {
         </div>
       </Group>
 
-      <StravaSection />
+      <IntervalsSection />
 
       <GarminSection />
 
@@ -433,76 +433,109 @@ function GarminSection() {
   );
 }
 
-const STRAVA_STATUS: Record<StravaLink['status'], { label: string; cls: string }> = {
+
+const ICU_STATUS: Record<IcuLink['status'], { label: string; cls: string }> = {
   ok: { label: 'מחובר', cls: 'text-emerald-600 dark:text-emerald-400' },
-  pending: { label: 'ממתין לאישור', cls: 'text-amber-600 dark:text-amber-400' },
-  error: { label: 'שגיאה בסנכרון', cls: 'text-rose-600 dark:text-rose-400' },
-  revoked: { label: 'הגישה בוטלה', cls: 'text-rose-600 dark:text-rose-400' },
+  pending: { label: 'ממתין לסנכרון ראשון', cls: 'text-amber-600 dark:text-amber-400' },
+  error: { label: 'שגיאה', cls: 'text-rose-600 dark:text-rose-400' },
 };
 
-function StravaSection() {
+function IntervalsSection() {
   const toast = useToast();
-  const link = useAsync(fetchStravaLink);
-  const [busy, setBusy] = useState<'connect' | 'sync' | 'disconnect' | null>(null);
+  const link = useAsync(fetchIcuLink);
+  const [athlete, setAthlete] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState<'save' | 'sync' | 'remove' | null>(null);
 
-  // Refresh after the OAuth callback finishes linking.
-  useEffect(() => {
-    const on = () => link.reload();
-    window.addEventListener('stride:strava-linked', on);
-    return () => window.removeEventListener('stride:strava-linked', on);
-  }, [link]);
-
-  async function run(kind: 'connect' | 'sync' | 'disconnect', fn: () => Promise<unknown>, okMsg?: (r: unknown) => string) {
-    setBusy(kind);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy('save');
     try {
-      const r = await fn();
-      if (okMsg) toast(okMsg(r));
-      await link.reload();
-    } catch (e) {
-      toast((e as Error).message, 'error');
+      await saveIcuCredentials(athlete.trim(), apiKey.trim());
+      setApiKey('');
+      setEditing(false);
+      const r = await syncIcu();
+      toast(`intervals.icu חובר! נמשכו ${r.upserted} ריצות 🎉`);
+    } catch (err) {
+      toast((err as Error).message, 'error');
     } finally {
+      await link.reload();
       setBusy(null);
     }
   }
 
-  if (link.loading && !link.data) return <Skeleton className="mb-6 h-36" />;
+  async function syncNow() {
+    setBusy('sync');
+    try {
+      const r = await syncIcu();
+      toast(`סונכרנו ${r.upserted} ריצות`);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      await link.reload();
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    if (!confirm('לנתק את intervals.icu ולמחוק את המפתח השמור? הריצות שכבר נשמרו יישארו.')) return;
+    setBusy('remove');
+    try {
+      await removeIcuCredentials();
+      toast('intervals.icu נותק והמפתח נמחק');
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      await link.reload();
+      setBusy(null);
+    }
+  }
+
+  if (link.loading && !link.data) return <Skeleton className="mb-6 h-40" />;
   const l = link.data ?? null;
+  const st = l ? ICU_STATUS[l.status] : null;
   const lastSync = l?.last_sync_at ? new Date(l.last_sync_at) : null;
-  const st = l ? STRAVA_STATUS[l.status] : null;
+  const inputCls = 'w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm outline-none ring-brand-500 focus:ring-2 dark:bg-white/5';
 
   return (
-    <Group title="Strava (מומלץ)">
-      {l ? (
+    <Group title="סנכרון ריצות — intervals.icu (חינמי, מומלץ)">
+      {l && !editing ? (
         <>
-          <Row icon={<Watch className="size-4" />} iconBg="bg-[#fc4c02]" label="חשבון">
-            <span className="max-w-[55%] truncate text-sm text-slate-500 dark:text-slate-400">{l.athlete_name ?? '—'}</span>
+          <Row icon={<Watch className="size-4" />} iconBg="bg-brand-600" label="מזהה ספורטאי">
+            <span dir="ltr" className="text-sm text-slate-500 dark:text-slate-400">{l.athlete_id === '0' ? 'אוטומטי' : l.athlete_id}</span>
           </Row>
-          <Row label="סטטוס">
-            {st && <span className={cx('flex items-center gap-1 text-sm font-semibold', st.cls)}>{st.label}</span>}
-          </Row>
+          <Row label="סטטוס">{st && <span className={cx('text-sm font-semibold', st.cls)}>{st.label}</span>}</Row>
           <Row label="סנכרון אחרון">
             <span className="text-sm text-slate-500 dark:text-slate-400">
               {lastSync ? `${fmt.dateShort(lastSync)} · ${fmt.time(lastSync)}` : '—'}
             </span>
           </Row>
-          {l.last_error && l.status !== 'ok' && (
+          {l.last_error && l.status === 'error' && (
             <p className="mx-4 mb-1 rounded-xl bg-rose-500/10 p-3 text-[12px] text-rose-700 dark:text-rose-300">{l.last_error}</p>
           )}
           <div className="flex gap-2 p-4">
             <button
-              onClick={() => run('sync', syncStrava, (r) => `סונכרנו ${(r as { upserted: number }).upserted} ריצות`)}
+              onClick={syncNow}
               disabled={busy !== null}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#fc4c02] py-3 text-sm font-bold text-white transition active:scale-[0.99] disabled:opacity-60"
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-brand-500 py-3 text-sm font-bold text-white transition active:scale-[0.99] disabled:opacity-60"
             >
               <RefreshCw className={cx('size-4', busy === 'sync' && 'animate-spin')} />
               {busy === 'sync' ? 'מסנכרן…' : 'סנכרן עכשיו'}
             </button>
             <button
               onClick={() => {
-                if (confirm('לנתק את Strava? הריצות שכבר נשמרו יישארו.')) run('disconnect', disconnectStrava, () => 'Strava נותק');
+                setAthlete(l.athlete_id === '0' ? '' : l.athlete_id);
+                setEditing(true);
               }}
+              className="rounded-2xl bg-slate-100 px-4 text-sm font-semibold dark:bg-white/5"
+            >
+              עדכון
+            </button>
+            <button
+              onClick={remove}
               disabled={busy !== null}
-              aria-label="ניתוק Strava"
+              aria-label="ניתוק intervals.icu"
               className="grid w-12 place-items-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400"
             >
               <Unlink className="size-4" />
@@ -510,23 +543,55 @@ function StravaSection() {
           </div>
         </>
       ) : (
-        <div className="space-y-3 p-4">
-          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-            חיבור רשמי ובטוח. ודאו שבאפליקציית Garmin Connect מופעל שיתוף אוטומטי ל-Strava — ומשם כל ריצה תגיע לכאן.
-          </p>
-          <button
-            onClick={() => run('connect', connectStrava)}
-            disabled={busy !== null}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#fc4c02] py-3.5 text-sm font-bold text-white shadow-lg shadow-orange-600/25 transition active:scale-[0.99] disabled:opacity-60"
-          >
-            {busy === 'connect' && <Loader2 className="size-4 animate-spin" />}
-            התחברות עם Strava
-          </button>
+        <form onSubmit={save} className="space-y-3 p-4">
+          <ol className="list-decimal space-y-1.5 ps-5 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+            <li>
+              נרשמים בחינם ב-<a href="https://intervals.icu" target="_blank" rel="noreferrer" className="font-semibold text-brand-600 dark:text-brand-300">intervals.icu</a> ומחברים שם את Garmin (חיבור רשמי, פעם אחת).
+            </li>
+            <li>
+              ב-intervals.icu: <b>Settings</b> ← <b>Developer Settings</b> ← יוצרים <b>API Key</b> ומעתיקים.
+            </li>
+            <li>מדביקים כאן ושומרים — זהו, הריצות יגיעו אוטומטית.</li>
+          </ol>
+          <input
+            dir="ltr"
+            value={athlete}
+            onChange={(e) => setAthlete(e.target.value)}
+            placeholder="Athlete ID, למשל i123456 (לא חובה)"
+            className={inputCls}
+            aria-label="מזהה ספורטאי ב-intervals.icu"
+          />
+          <input
+            type="password"
+            required
+            dir="ltr"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="API Key"
+            autoComplete="off"
+            spellCheck={false}
+            className={inputCls}
+            aria-label="API Key של intervals.icu"
+          />
+          <div className="flex gap-2">
+            <button
+              disabled={busy !== null}
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 py-3 text-sm font-bold text-white transition active:scale-[0.99] disabled:opacity-60 dark:bg-white dark:text-slate-900"
+            >
+              {busy === 'save' && <Loader2 className="size-4 animate-spin" />}
+              שמירה וסנכרון
+            </button>
+            {editing && (
+              <button type="button" onClick={() => setEditing(false)} className="rounded-2xl px-4 text-sm font-semibold text-slate-500">
+                ביטול
+              </button>
+            )}
+          </div>
           <p className="flex gap-2 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />
-            אין צורך בסיסמה — Strava נותנים הרשאת קריאה בלבד לפעילויות, ואפשר לבטל אותה בכל רגע.
+            המפתח נשמר מוצפן (Supabase Vault) ומשמש רק לקריאת הריצות שלך. אפשר לבטל אותו בכל רגע ב-intervals.icu.
           </p>
-        </div>
+        </form>
       )}
     </Group>
   );

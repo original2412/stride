@@ -4,7 +4,7 @@ import { PageHeader } from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { cx, ErrorCard, Skeleton } from '../components/ui';
 import { useAsync } from '../hooks/useAsync';
-import { fetchActivities, fetchStravaLink, isDemo, syncGarmin, syncStrava } from '../lib/api';
+import { fetchActivities, fetchIcuLink, fetchStravaLink, isDemo, syncGarmin, syncIcu, syncStrava } from '../lib/api';
 import { addDays, fmt, formatDuration, formatKm, formatPace, toISODate } from '../lib/format';
 import { weekStart } from '../lib/stats';
 import type { Activity } from '../lib/types';
@@ -18,8 +18,13 @@ export default function HistoryView() {
     setSyncing(true);
     try {
       // Prefer the official Strava link (immediate); fall back to the queued Garmin worker.
-      const strava = isDemo ? null : await fetchStravaLink();
-      if (strava) {
+      const icu = isDemo ? null : await fetchIcuLink();
+      const strava = isDemo || icu ? null : await fetchStravaLink();
+      if (icu) {
+        const r = await syncIcu();
+        await acts.reload();
+        toast(`סונכרנו ${r.upserted} ריצות מ-intervals.icu`);
+      } else if (strava) {
         const r = await syncStrava();
         await acts.reload();
         toast(`סונכרנו ${r.upserted} ריצות מ-Strava`);
@@ -40,7 +45,7 @@ export default function HistoryView() {
 
   return (
     <div>
-      <PageHeader eyebrow="Strava · Garmin" title="היסטוריית ריצות" />
+      <PageHeader eyebrow="Garmin · intervals.icu" title="היסטוריית ריצות" />
 
       <button
         onClick={handleSync}

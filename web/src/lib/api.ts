@@ -37,6 +37,53 @@ export async function fetchActivities(days = 70): Promise<Activity[]> {
   return data as Activity[];
 }
 
+// ---------------- intervals.icu (official Garmin partner; personal API key) ----------------
+export interface IcuLink {
+  athlete_id: string;
+  status: 'pending' | 'ok' | 'error';
+  last_error: string | null;
+  last_sync_at: string | null;
+}
+
+export async function fetchIcuLink(): Promise<IcuLink | null> {
+  if (!supabase) {
+    return { athlete_id: 'i000000', status: 'ok', last_error: null, last_sync_at: mockStore.profile.garmin_last_sync_at };
+  }
+  const { data, error } = await supabase.from('icu_links').select('athlete_id, status, last_error, last_sync_at').maybeSingle();
+  if (error) throw error;
+  return data as IcuLink | null;
+}
+
+/** The API key goes straight into Supabase Vault (encrypted) and is never read back. */
+export async function saveIcuCredentials(athleteId: string, apiKey: string): Promise<void> {
+  if (!supabase) {
+    await delay(500);
+    return;
+  }
+  const { error } = await supabase.rpc('set_icu_credentials', { p_athlete: athleteId, p_key: apiKey });
+  if (error) throw error;
+}
+
+export async function removeIcuCredentials(): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.rpc('remove_icu_credentials');
+  if (error) throw error;
+}
+
+export async function syncIcu(): Promise<{ upserted: number }> {
+  if (!supabase) {
+    await delay(1200);
+    return { upserted: 3 };
+  }
+  const { data, error } = await supabase.functions.invoke<{ upserted: number }>('intervals', { body: { action: 'sync' } });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    const msg = ctx ? (await ctx.json().catch(() => null))?.error : null;
+    throw new Error(msg ?? error.message);
+  }
+  return data!;
+}
+
 // ---------------- Strava (official OAuth; Garmin auto-uploads to Strava) ----------------
 export interface StravaLink {
   athlete_id: number | null;

@@ -2,7 +2,7 @@ name: Activity sync
 
 on:
   schedule:
-    # Every 30 min: pull new runs from Strava for every linked user.
+    # Every 30 min: pull new runs from intervals.icu for every linked user.
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
@@ -11,16 +11,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  strava:
+  intervals:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Sync Strava for all linked users
+      - name: Sync intervals.icu for all linked users
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          curl -sS --fail-with-body -X POST "$SUPABASE_URL/functions/v1/strava" \
+          curl -sS --fail-with-body -X POST "$SUPABASE_URL/functions/v1/intervals" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
