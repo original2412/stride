@@ -24,10 +24,20 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
-    const { data: { user }, error: authError } = await admin.auth.getUser(jwt);
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
-
     const body = await req.json().catch(() => ({}));
+    let user: { id: string };
+    if (body.user_id) {
+      // Server-to-server (automatic replan after a sync): only a service-level key
+      // can call the service-only RPC, so this proves the caller is trusted.
+      const svc = createClient(Deno.env.get("SUPABASE_URL")!, jwt, { auth: { persistSession: false } });
+      const { error: svcErr } = await svc.rpc("icu_sync_users");
+      if (svcErr) return json({ error: "Unauthorized" }, 401);
+      user = { id: String(body.user_id) };
+    } else {
+      const { data: { user: authUser }, error: authError } = await admin.auth.getUser(jwt);
+      if (authError || !authUser) return json({ error: "Unauthorized" }, 401);
+      user = authUser;
+    }
     const today: string = /^\d{4}-\d{2}-\d{2}$/.test(body.today ?? "")
       ? body.today
       : new Date().toISOString().slice(0, 10);
