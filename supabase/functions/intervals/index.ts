@@ -86,8 +86,9 @@ async function syncUser(admin: SupabaseClient, userId: string): Promise<{ fetche
     const cred = (data ?? [])[0];
     if (!cred?.api_key) throw new Error("intervals.icu לא מחובר");
 
-    // First sync: 60 days (VDOT needs 6 weeks). Later: overlap 3 days to catch edits.
-    const since = cred.last_sync_at ? Date.parse(cred.last_sync_at) - 3 * 86_400_000 : Date.now() - 60 * 86_400_000;
+    // Always look back 60 days (VDOT needs 6 weeks): history imports can add old runs at any
+    // time. It's a single API call and the upsert is idempotent.
+    const since = Date.now() - 60 * 86_400_000;
     const url = `https://intervals.icu/api/v1/athlete/${encodeURIComponent(cred.athlete_id || "0")}/activities` +
       `?oldest=${day(since)}&newest=${day(Date.now() + 86_400_000)}`;
     const res = await fetch(url, { headers: { Authorization: `Basic ${btoa(`API_KEY:${cred.api_key}`)}` } });
